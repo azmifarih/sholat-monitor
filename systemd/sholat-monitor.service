@@ -57,14 +57,24 @@ RestrictSUIDSGID=true
 # PrivateTmp tidak dipakai: /tmp bersama mempermudah debugging, dan tidak ada
 # alasan daemon ini butuh tmp terisolasi.
 #
-# Yang sengaja TIDAK dipakai di user service ini, karena semuanya gagal start
-# dengan "Failed to drop capabilities: Operation not permitted" ->
-# "status=218/CAPABILITIES":
-#   ProtectKernelModules=true
-#   NoNewPrivileges=true
-# systemd di user service tidak punya izin menurunkan capability untuk proses
-# yang di-spawn, jadi setiap direktif yang memaksa penurunan capability membuat
-# unit tidak bisa jalan sama sekali.
+# NoNewPrivileges aman di user service dan tetap dipakai. Artinya: proses ini
+# dan semua anaknya tidak bisa menambah hak lewat execve - binary setuid/setgid
+# (sudo, passwd, mount) dan file capability tidak lagi berpengaruh. Jadi kalau
+# ada proses anak yang disalahgunakan, dia tidak bisa naik jadi root.
+NoNewPrivileges=true
+
+# Yang sengaja TIDAK dipakai, dan alasannya sudah diuji langsung:
+#   ProtectKernelModules=true   (menghapus CAP_SYS_MODULE)
+#   ProtectKernelLogs=true      (menghapus CAP_SYSLOG)
+#   CapabilityBoundingSet=...
+# Ketiganya gagal start di systemd --user dengan
+#   "Failed to drop capabilities: Operation not permitted"
+#   -> "status=218/CAPABILITIES"
+# Sebabnya: menghapus capability dari bounding set butuh CAP_SETPCAP, dan user
+# manager tidak memilikinya. Direktif yang TIDAK menghapus capability
+# (NoNewPrivileges, ProtectSystem, ProtectHome, ProtectKernelTunables,
+# ProtectControlGroups, RestrictNamespaces, RestrictSUIDSGID, PrivateTmp)
+# semuanya jalan normal.
 #
 # Panggil luvus CLI dan notify-send: butuh socket Luvus dan session DBus,
 # jadi PrivateUsers harus tetap false.

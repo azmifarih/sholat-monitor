@@ -355,12 +355,19 @@ Sejak diperbaiki, daemon **melaporkan sendiri** kalau tidak bisa menulis:
 cari baris `PERINGATAN: tidak bisa menulis ke ...` di journal. Kalau tidak ada
 peringatan itu, tulisannya baik-baik saja.
 
-**Service gagal start dengan `status=218/CAPABILITIES`.** Di user service,
-systemd tidak punya izin menurunkan capability untuk proses yang di-spawn, jadi
-`NoNewPrivileges` dan `ProtectKernelModules` membuat unit tidak bisa jalan sama
-sekali. Keduanya sengaja tidak dipakai; pengetatan filesystem
-(`ProtectSystem=strict` + `ProtectHome=read-only` + `ReadWritePaths`) tetap
-dipakai.
+**Service gagal start dengan `status=218/CAPABILITIES`.** Setiap direktif yang
+**menghapus capability** gagal di user service, karena itu butuh `CAP_SETPCAP`
+yang tidak dimiliki user manager. Yang termasuk: `ProtectKernelModules`
+(menghapus `CAP_SYS_MODULE`), `ProtectKernelLogs` (menghapus `CAP_SYSLOG`), dan
+`CapabilityBoundingSet=...`. Ketiganya sengaja tidak dipakai.
+
+`NoNewPrivileges` **tidak** menghapus capability, jadi aman dan tetap dipakai.
+Begitu juga `ProtectSystem=strict`, `ProtectHome=read-only`, `ReadWritePaths`,
+`ProtectKernelTunables`, `ProtectControlGroups`, `RestrictNamespaces`,
+`RestrictRealtime`, `RestrictSUIDSGID`, dan `PrivateTmp`.
+
+Aturan cepatnya: kalau sebuah direktif menyebut nama capability, jangan pakai di
+user service.
 
 **Widget bar hilang dari bar.** Pastikan module-nya masih ter-link:
 
