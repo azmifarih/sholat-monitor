@@ -5,10 +5,25 @@
 
 import { test } from "node:test"
 import assert from "node:assert/strict"
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 
-import { loadConfig, stripJsonComments, DEFAULTS, forPrayer, inQuietHours } from "../src/config.js"
-import { plan, tick, alertText } from "../src/daemon.js"
-import { computeDay, schedule, ymd } from "../src/prayer-times.js"
+// Tes TIDAK boleh menulis ke state/log daemon yang sedang sungguhan berjalan.
+// `log()` di daemon.js menulis ke file log, dan tick() memanggilnya untuk setiap
+// alert - jadi tanpa isolasi, tiap kali tes dijalankan log produksi terisi
+// alert palsu yang terlihat seperti kejadian sungguhan.
+//
+// Import ESM dievaluasi sebelum baris lain jalan, jadi env harus disetel dulu
+// dan modul dimuat secara dinamis (sama seperti test/integration.mjs).
+const SANDBOX = mkdtempSync(join(tmpdir(), "sholat-test-"))
+process.env.SHOLAT_STATE_DIR = SANDBOX
+
+const { loadConfig, stripJsonComments, DEFAULTS, forPrayer, inQuietHours } = await import("../src/config.js")
+const { plan, tick, alertText } = await import("../src/daemon.js")
+const { computeDay, schedule, ymd } = await import("../src/prayer-times.js")
+
+process.on("exit", () => rmSync(SANDBOX, { recursive: true, force: true }))
 
 // ------------------------------------------------------------- JSONC parser
 
