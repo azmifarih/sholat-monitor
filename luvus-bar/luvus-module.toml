@@ -1,0 +1,25 @@
+id = "sholat.bar"
+name = "Waktu Shalat Bar"
+version = "0.1.0"
+min_luvus_version = "0.8.3"
+description = "Widget Luvus Bar: sholat berikutnya + countdown, di-refresh tiap menit."
+platforms = ["linux"]
+
+[[bars]]
+id = "next"                      # id lokal: dipanggil sebagai `sholat.bar:next`
+title = "Waktu Shalat"
+region = "bottom-right"          # top-right | bottom-right | off
+priority = 120                   # lebih tinggi dari runtime-status (100), jadi tidak tinggal dulu di overflow
+
+[[startup]]                      # repaint setelah server/session siap
+command = ["node", "publish.js"]
+
+[[actions]]                      # dipanggil saat widget diklik
+id = "today"
+title = "Tampilkan jadwal hari ini"
+command = ["node", "today.js"]
+
+[[actions]]
+id = "refresh"
+title = "Refresh sekarang"
+command = ["node", "publish.js"]

@@ -1,0 +1,74 @@
+[Unit]
+Description=Monitoring waktu sholat (jadwal dari landak.com)
+Documentation=https://shalat.landak.com
+# Setelah jaringan tersedia, supaya tidak gagal saat boot belum selesai.
+After=network-online.target
+Wants=network-online.target
+# Kalau gagal 5 kali dalam 5 menit, berhenti mencoba supaya tidak jadi loop
+# senyap yang membanjiri log. StartLimit* milik [Unit], bukan [Service].
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+
+# Daemon menghitung jadwal dari jam sistem, jadi jam itu harus benar.
+# Kalau jam sistem salah, tidak ada yang bisa dipercaya soal "sekarang waktunya".
+ProtectClock=false
+
+WorkingDirectory=%h/projects/sholat-monitor
+ExecStart=/usr/bin/env node %h/projects/sholat-monitor/bin/sholat run
+
+# Restart selalu: daemon harus bertahan dari crash maupun restart mesin.
+# Backoff-nya pelan supaya tidak spin kalau ada error yang berulang.
+Restart=always
+RestartSec=10
+
+# Kill bersih supaya daemon sempat menyimpan state sebelum mati.
+KillSignal=SIGTERM
+TimeoutStopSec=20
+
+# Log ke journal, yang sudah rotasi sendiri. Daemon juga menulis log ke
+# ~/.local/state/sholat-monitor/daemon.log supaya bisa dibaca tanpa journal.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=sholat
+
+# ------------------------------------------------------------- pengetatan
+# Filesystem dibuat read-only seluruhnya, lalu hanya direktori state yang
+# dibuka untuk tulis. Ini pengaman kalau daemon (atau proses anak yang
+# dipanggilnya: luvus, notify-send, curl) disalahgunakan.
+#
+# PENTING: path di ReadWritePaths harus SAMA PERSIS dengan STATE_DIR di
+# src/daemon.js. Kalau tidak, daemon tetap "active" tapi tidak bisa menulis
+# state - tanpa error yang terlihat. Kalau di suatu saat alert berhenti tapi
+# service hijau, periksa dua hal itu lebih dulu.
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.local/state/sholat-monitor
+
+# Kernel dan namespace tidak diperlukan daemon ini.
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+
+# PrivateTmp tidak dipakai: /tmp bersama mempermudah debugging, dan tidak ada
+# alasan daemon ini butuh tmp terisolasi.
+#
+# Yang sengaja TIDAK dipakai di user service ini, karena semuanya gagal start
+# dengan "Failed to drop capabilities: Operation not permitted" ->
+# "status=218/CAPABILITIES":
+#   ProtectKernelModules=true
+#   NoNewPrivileges=true
+# systemd di user service tidak punya izin menurunkan capability untuk proses
+# yang di-spawn, jadi setiap direktif yang memaksa penurunan capability membuat
+# unit tidak bisa jalan sama sekali.
+#
+# Panggil luvus CLI dan notify-send: butuh socket Luvus dan session DBus,
+# jadi PrivateUsers harus tetap false.
+PrivateUsers=false
+
+[Install]
+WantedBy=default.target

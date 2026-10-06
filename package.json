@@ -1,0 +1,10 @@
+{
+  "name": "sholat-monitor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Monitoring waktu sholat (landak.com) dengan notifikasi ke OpenCode TUI, Luvus Bar, dan desktop.",
+  "bin": {
+    "sholat": "bin/sholat"
+  }
+}

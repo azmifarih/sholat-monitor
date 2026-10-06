@@ -1,0 +1,129 @@
+{
+  // ==========================================================================
+  // sholat - monitoring waktu sholat
+  //
+  // Jadwal dihitung dengan PrayTimes.js yang diambil dari landak.com, memakai
+  // setelan yang sama persis dengan halaman itu, jadi angkanya bukan "mirip"
+  // tapi sama dengan situs. Semua angka di sini boleh diubah.
+  //
+  // Setelah ubah: `sholat doctor` untuk cek, lalu
+  // `systemctl --user restart sholat-monitor` supaya berlaku.
+  // ==========================================================================
+
+  // Kota dan koordinat. Nilai bawaan = yang dipakai halaman landak untuk
+  // Semarang: https://shalat.landak.com/?kota=Semarang
+  "location": {
+    "kota": "Semarang",
+    "lat": -6.9666667,
+    "lng": 110.4166667,
+    "tz": 7 // offset jam dari UTC; 7 = WIB
+  },
+
+  // Parameter perhitungan. Semua punya nilai yang dipakai landak, jadi kalau
+  // tidak diubah, hasil kita = hasil situs.
+  "params": {
+    "method": "MWL",        // MWL | ISNA | Egypt | Karachi | UmmAlQura | Dubai | Qatar | Kuwait | Singapore | Turkey | Tehran
+    "imsak": "10 min",
+    "fajr": 20,             // sudut Shubuh di bawah horizon (derajat)
+    "isha": 18,             // sudut Isya di bawah horizon (derajat)
+    "maghrib": 1,           // sudut Maghrib di bawah horizon (derajat)
+    "dhuhr": "2 min",       // jeda aman sesudah titik zenith
+    "asr": "Standard",      // Standard = Syafi'i/Maliki/Hanbali; "Hanafi" = Hanafi
+    "highLats": "NightMiddle"
+  },
+
+  // Penyesuaian menit per sholat, sama seperti tune() di landak.
+  "tune": {
+    "fajr": 1,
+    "sunrise": -2,
+    "asr": 2,
+    "maghrib": 2,
+    "isha": 1
+  },
+
+  // Pengaman dalam DETIK, dikurangi dari semua waktu. Bawaan 0 supaya identik
+  // dengan situs. Naikkan ke 60 kalau ingin selalu lebih cepat 1 menit.
+  "ihtiyati": 0,
+
+  // Koreksi manual per sholat, dalam MENIT. Pakai kalau masjidmu terasa lebih
+  // cepat atau lambat. Contoh: { "asr": 2 }
+  "koreksi": {},
+
+  // ---------------------------------------------------------------- alert
+
+  "alerts": {
+    // Menit sebelum waktu sholat. 15 = info, 5 = serius, 0 = sekarang waktunya.
+    "leadMinutes": [15, 5, 0],
+
+    // Sholat mana yang diawasi.
+    "prayers": ["fajr", "dhuhr", "asr", "maghrib", "isha"],
+
+    // Kalau daemon mati lama lalu menyala lagi, alert yang telat lebih dari ini
+    // dianggap terlewat dan tidak dipicu (biar tidak meledak sekaligus).
+    "lateToleranceMinutes": 20,
+
+    // Override per sholat. Contoh: Isya cuma kasih info, tidak kritis.
+    //   "perPrayer": { "isha": { "leadMinutes": [5, 0], "desktop": false } }
+    "perPrayer": {}
+  },
+
+  // -------------------------------------------------------------- channels
+
+  "channels": {
+
+    // Notifikasi GNOME. Ini yang paling Attention benar karena muncul di
+    // layar dan tidak ikut tertutup window lain.
+    "desktop": {
+      "enabled": true,
+      "criticalAtMinutes": 5,   // <= 5 menit jadi "critical" (tidak ilang sendiri)
+      "timeoutMs": 15000,        // untuk yang tidak critical
+      "sound": false,            // bunyi sistem; channel suara paling merebut perhatian
+      "appName": "Waktu Sholat",
+      "icon": "org.gnome.clocks"
+    },
+
+    // Tulis alert.json untuk plugin TUI OpenCode.
+    "opencode": {
+      "enabled": true,
+      "atLeadMinutes": [5, 0],  // hanya lead ini yang kirim ke TUI
+      // Tulis LUVUS_PANE_ID pane yang sedang fokus, jadi hanya TUI yang
+      // sedang kamu lihat yang menampilkan toast.
+      "targetFocusedPane": true
+    },
+
+    // Widget Luvus Bar (module sholat.bar).
+    "luvusBar": { "enabled": true },
+
+    // Suara adhan. NONAKTIF secara bawaan: suara benar-benar merebut
+    // perhatian, bagus saat di meja, buruk kalau jam 4 pagi.
+    "sound": {
+      "enabled": false,
+      "url": "http://shalat.landak.com/Adhan Makkah.mp3",
+      "file": "~/.local/state/sholat-monitor/adhan-makkah.mp3",
+      "player": "auto",         // auto | ffplay | paplay | mpv | cvlc
+      "volume": 40,             // 0-100
+      "atLeadMinutes": [0]
+    }
+  },
+
+  // ------------------------------------------------------------ jam tenang
+
+  // Alert yang jatuh di rentang ini dilewati. Rentang boleh melewati tengah
+  // malam (22:30 -> 04:00). Berguna kalau adhan jam Subuh yang membangunkan
+  // orang rumah.
+  "quiet": {
+    "enabled": false,
+    "from": "22:30",
+    "to": "04:00"
+  },
+
+  // ---------------------------------------------------------------- daemon
+
+  "daemon": {
+    "tickSeconds": 60,
+    // Sehari sekali bandingkan engine lokal dengan yang ada di landak, supaya
+    // kalau upstream berubah kita tahu (dan ikut berubah setelah di-update).
+    "syncDays": 1,
+    "syncAt": "03:20"
+  }
+}

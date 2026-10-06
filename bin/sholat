@@ -1,0 +1,343 @@
+#!/usr/bin/env node
+// sholat - CLI untuk daemon waktu sholat.
+//
+//   sholat today            jadwal hari ini + besok
+//   sholat next             sholat berikutnya (JSON)
+//   sholat run              jalankan daemon di foreground
+//   sholat once             satu tick saja (untuk cron atau pemicu manual)
+//   sholat test [--lead N]  picu semua channel dengan alert palsu
+//   sholat sync             bandingkan/tarik ulang engine dari landak
+//   sholat status           state daemon + snapshot
+//   sholat doctor           cek semua prasyarat
+//   sholat install          pasang + nyalakan service systemd user
+//   sholat log              tail log daemon
+
+import { readFileSync, writeFileSync, mkdirSync, existsSync, copyFileSync, chmodSync } from "node:fs"
+import { spawnSync } from "node:child_process"
+import { join, dirname } from "node:path"
+import { fileURLToPath } from "node:url"
+import { loadConfig, CONFIG_PATH, stripJsonComments } from "../src/config.js"
+import { schedule, fmtCountdown } from "../src/prayer-times.js"
+import { tick, run, loadState, writeSnapshot, log, STATE_DIR, LOG_FILE, SNAPSHOT_FILE, STATE_FILE } from "../src/daemon.js"
+import { syncVendor, vendorStatus } from "../src/sync.js"
+import * as desktopChannel from "../src/channels/desktop.js"
+import * as opencodeChannel from "../src/channels/opencode.js"
+import * as barChannel from "../src/channels/luvus-bar.js"
+import * as soundChannel from "../src/channels/sound.js"
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..")
+const UNIT_SRC = join(ROOT, "systemd", "sholat-monitor.service")
+const UNIT_DIR = join(process.env.HOME, ".config", "systemd", "user")
+const UNIT_DEST = join(UNIT_DIR, "sholat-monitor.service")
+
+const PRAYER_ROWS = [
+  ["fajr", "Shubuh", "فجر"],
+  ["sunrise", "Terbit", ""],
+  ["dhuhr", "Dzuhur", "ظهر"],
+  ["asr", "Ashar", "عصر"],
+  ["sunset", "Terbenam", ""],
+  ["maghrib", "Maghrib", "مغرب"],
+  ["isha", "Isya", "عشاء"],
+]
+
+const pad = (s, n) => String(s).padEnd(n)
+
+function die(message, code = 1) {
+  console.error(`error: ${message}`)
+  process.exit(code)
+}
+
+// ------------------------------------------------------------------ today
+
+function cmdToday(cfg) {
+  const now = new Date()
+  const s = schedule(now, cfg)
+  const header = `${cfg.location.kota} (${cfg.location.lat}, ${cfg.location.lng} UTC+${cfg.location.tz})`
+  console.log(`\n  Waktu Sholat — ${header}\n`)
+  const rows = [
+    ["", s.today.date, s.tomorrow.date],
+    ...PRAYER_ROWS.map(([key, label, arabic]) => [
+      `${label}${arabic ? " " + arabic : ""}`,
+      s.today.times[key] ?? "-",
+      s.tomorrow.times[key] ?? "-",
+    ]),
+  ]
+  for (const [a, b, c] of rows) console.log(`  ${pad(a, 18)} ${pad(b, 10)} ${c}`)
+  if (s.next) {
+    const when = s.next.tomorrow ? "besok" : "hari ini"
+    console.log(`\n  Berikutnya: ${s.next.label} ${s.next.time} (${when}, ${fmtCountdown(s.next.minutesLeft)} lagi)`)
+  }
+  console.log(`\n  Metode ${cfg.params.method}, fajr ${cfg.params.fajr}°, isha ${cfg.params.isha}°, asr ${cfg.params.asr}`)
+  console.log(`  Sumber: PrayTimes.js dari landak.com, disinkron harian\n`)
+}
+
+// ------------------------------------------------------------------- next
+
+function cmdNext(cfg) {
+  const s = schedule(new Date(), cfg)
+  if (!s.next) die("tidak ada sholat berikutnya yang dihitung")
+  console.log(
+    JSON.stringify(
+      {
+        kota: cfg.location.kota,
+        key: s.next.key,
+        label: s.next.label,
+        time: s.next.time,
+        at: s.next.at.toISOString(),
+        tomorrow: s.next.tomorrow,
+        minutesLeft: s.next.minutesLeft,
+        countdown: fmtCountdown(s.next.minutesLeft),
+      },
+      null,
+      2,
+    ),
+  )
+}
+
+// -------------------------------------------------------------------- test
+
+function cmdTest(cfg, leadArg) {
+  const lead = leadArg === undefined ? 5 : Number(leadArg)
+  const s = schedule(new Date(), cfg)
+  const event = {
+    id: `test-${Date.now()}`,
+    prayerKey: s.next?.key ?? "fajr",
+    prayerAt: s.next?.at ?? new Date(),
+    clock: s.next?.time ?? "--:--",
+    lead,
+    label: s.next?.label ?? "Shubuh",
+    when: new Date(),
+    quiet: false,
+    overrides: {},
+  }
+  console.log(`Memicu alert palsu (H-${lead}) ke semua channel yang aktif:\n`)
+  const results = {}
+
+  if (cfg.channels.desktop.enabled) {
+    results.desktop = desktopChannel.desktop(cfg.channels.desktop, {
+      id: event.id,
+      title: "Waktu Sholat (TES)",
+      body: `${lead} menit lagi — ${event.label} ${event.clock} · ${cfg.location.kota} · ini alert palsu`,
+      critical: lead <= 5,
+      minutesLeft: lead,
+    })
+    console.log(`  desktop : ${results.desktop.ok ? "ok (critical=" + results.desktop.critical + ")" : "gagal: " + results.desktop.reason}`)
+  }
+
+  if (cfg.channels.opencode.enabled) {
+    results.opencode = opencodeChannel.opencode(cfg.channels.opencode, {
+      id: event.id,
+      level: "warning",
+      title: "Waktu Sholat (TES)",
+      body: `${lead} menit lagi — ${event.label} ${event.clock} · ${cfg.location.kota}`,
+      critical: true,
+    })
+    console.log(`  opencode: ${results.opencode.ok ? "ok, alert.json ditulis" : "gagal: " + results.opencode.reason}` + (results.opencode.pane ? ` (target pane ${results.opencode.pane})` : " (tanpa target pane)"))
+  }
+
+  if (cfg.channels.luvusBar.enabled) {
+    results.bar = barChannel.luvusBar(cfg.channels.luvusBar, null)
+    console.log(`  bar     : ${results.bar.ok ? "ok, widget direpaint" : "gagal: " + results.bar.reason}`)
+  }
+
+  if (cfg.channels.sound.enabled) {
+    results.sound = soundChannel.sound(cfg.channels.sound, null, log)
+    console.log(`  sound   : ${results.sound.ok ? `ok, ${results.sound.player}` : "gagal: " + results.sound.reason}`)
+  }
+
+  const failed = Object.entries(results).filter(([, r]) => !r?.ok)
+  console.log(failed.length === 0 ? "\n  semua channel ok\n" : `\n  ${failed.length} channel gagal\n`)
+  process.exit(failed.length === 0 ? 0 : 1)
+}
+
+// ------------------------------------------------------------------ doctor
+
+function has(bin) {
+  return spawnSync("command", ["-v", bin], { shell: true }).status === 0
+}
+
+function cmdDoctor(cfg) {
+  const lines = []
+  const push = (ok, label, detail = "") => lines.push(`  ${ok ? "ok  " : "GAGAL"}  ${pad(label, 26)} ${detail}`)
+
+  lines.push("\n  Prasyarat sholat-monitor\n")
+
+  let configOk = true
+  try {
+    cfg
+  } catch (error) {
+    configOk = false
+    lines.push(`  GAGAL  config tidak terbaca      ${error.message}`)
+  }
+  push(configOk, "config", CONFIG_PATH)
+  for (const problem of cfg.__problems ?? []) lines.push(`  perlu  ${problem}`)
+
+  const vendor = vendorStatus()
+  push(vendor.exists, "engine PrayTimes.js", vendor.exists ? `${vendor.bytes} byte, sha ${vendor.sha256.slice(0, 12)}` : "vendor/PrayTimes.js hilang")
+
+  push(has("curl"), "curl (sinkron engine)", "http ke landak")
+  const luvusBin = process.env.LUVUS_BIN_PATH ?? "luvus"
+  push(has("curl") && spawnSync(luvusBin, ["server", "status"], { encoding: "utf8" }).status === 0, "luvus server", luvusBin)
+  push(barChannel.available(), "modul bar sholat.bar", "luvus-bar/publish.js")
+  push(desktopChannel.available(), "notify-send", "channel desktop")
+  push(has("systemctl"), "systemd", "user service")
+
+  const player = ["ffplay", "paplay", "mpv", "cvlc"].filter(has)
+  push(player.length > 0, "player audio", player.join(", ") || "tidak ada (channel suara akan gagal)")
+
+  const audio = cfg.channels.sound.enabled && !soundChannel.ensureAudio(cfg, () => {})
+  lines.push(`  info   channel suara          ${cfg.channels.sound.enabled ? (audio ? "aktif" : "aktif tapi adhan belum terunduh") : "nonaktif"}`)
+
+  const unit = existsSync(UNIT_DEST)
+  lines.push(`  info   systemd unit          ${unit ? UNIT_DEST : "belum dipasang (sholat install)"}`)
+
+  const failed = lines.filter((l) => l.trim().startsWith("GAGAL"))
+  lines.push("", failed.length === 0 ? "  Semua prasyarat terpenuhi.\n" : `  ${failed.length} prasyarat belum terpenuhi.\n`)
+  console.log(lines.join("\n"))
+  process.exit(failed.length === 0 ? 0 : 1)
+}
+
+// ----------------------------------------------------------------- install
+
+function cmdInstall(cfg) {
+  mkdirSync(UNIT_DIR, { recursive: true })
+  copyFileSync(UNIT_SRC, UNIT_DEST)
+  chmodSync(UNIT_DEST, 0o644)
+
+  const systemctl = (args) => spawnSync("systemctl", ["--user", ...args], { encoding: "utf8" })
+
+  const daemonReload = systemctl(["daemon-reload"])
+  if (daemonReload.status !== 0) die(`systemctl daemon-reload gagal: ${daemonReload.stderr?.trim()}`)
+
+  const enable = systemctl(["enable", "--now", "sholat-monitor.service"])
+  if (enable.status !== 0) die(`enable gagal: ${enable.stderr?.trim()}`)
+
+  // Linger: supaya service user tetap jalan setelah logout, bukan hanya
+  // selama sesi login. Tanpa ini, "tahan restart" hanya berlaku selama kamu login.
+  const linger = spawnSync("loginctl", ["enable-linger", process.env.USER], { encoding: "utf8" })
+  const lingerOk = linger.status === 0
+
+  writeSnapshot(cfg)
+
+  console.log(`
+  Terpasang:
+    unit     ${UNIT_DEST}
+    config   ${CONFIG_PATH}
+    state    ${STATE_DIR}
+    log      ${LOG_FILE}
+
+  systemd   ${enable.stdout?.trim().split("\n").pop() ?? "aktif"}
+  linger    ${lingerOk ? "aktif (jalan walau tidak login)" : `GAGAL: ${linger.stderr?.trim()}`}
+
+  Perintah:
+    systemctl --user status sholat-monitor
+    journalctl --user -u sholat-monitor -f
+    sholat today
+`)
+}
+
+// --------------------------------------------------------------------- run
+
+function cmdRun(cfg) {
+  run(cfg)
+}
+
+function cmdOnce(cfg) {
+  const state = loadState()
+  const result = tick(cfg, state)
+  writeSnapshot(cfg)
+  console.log(`  tick #${state.ticks}, ${result.fired.length} alert dipicu, bar: ${result.barResult?.ok ? "ok" : "gagal"}`)
+  process.exit(0)
+}
+
+function cmdStatus() {
+  const snap = existsSync(SNAPSHOT_FILE) ? JSON.parse(readFileSync(SNAPSHOT_FILE, "utf8")) : null
+  const state = existsSync(STATE_FILE) ? JSON.parse(readFileSync(STATE_FILE, "utf8")) : null
+  console.log("\n  Snapshot")
+  if (!snap) console.log("  belum ada - daemon belum pernah jalan")
+  else {
+    console.log(`  diperbarui  ${snap.updatedAt}`)
+    console.log(`  kota        ${snap.kota}`)
+    if (snap.next) console.log(`  berikutnya   ${snap.next.label} ${snap.next.time} (${fmtCountdown(snap.next.minutesLeft)})`)
+    console.log(`  hari ini   Shubuh ${snap.today.times.fajr} · Dzuhur ${snap.today.times.dhuhr} · Ashar ${snap.today.times.asr} · Maghrib ${snap.today.times.maghrib} · Isya ${snap.today.times.isha}`)
+  }
+  console.log("\n  State")
+  if (!state) console.log("  belum ada")
+  else {
+    console.log(`  tick     ${state.ticks}`)
+    console.log(`  start    ${state.startedAt}`)
+    console.log(`  lastTick ${state.lastTickAt}`)
+    console.log(`  alert    ${Object.keys(state.fired ?? {}).length} kunci`)
+  }
+  const active = spawnSync("systemctl", ["--user", "is-active", "sholat-monitor.service"], { encoding: "utf8" })
+  console.log(`\n  service  ${(active.stdout ?? "").trim() || "tidak terpasang"}\n`)
+}
+
+function cmdSync() {
+  const result = syncVendor(log)
+  console.log(JSON.stringify(result, null, 2))
+  console.log(JSON.stringify(vendorStatus(), null, 2))
+}
+
+// ------------------------------------------------------------------- main
+
+const [, , command = "today", ...rest] = process.argv
+let cfg
+try {
+  cfg = loadConfig()
+} catch (error) {
+  die(error.message)
+}
+
+switch (command) {
+  case "today":
+    cmdToday(cfg)
+    break
+  case "next":
+    cmdNext(cfg)
+    break
+  case "run":
+    cmdRun(cfg)
+    break
+  case "once":
+    cmdOnce(cfg)
+    break
+  case "test":
+    cmdTest(cfg, rest[0])
+    break
+  case "sync":
+    cmdSync()
+    break
+  case "doctor":
+    cmdDoctor(cfg)
+    break
+  case "install":
+    cmdInstall(cfg)
+    break
+  case "status":
+    cmdStatus()
+    break
+  case "log":
+    spawnSync("journalctl", ["--user", "-u", "sholat-monitor.service", "-f", ...rest], { stdio: "inherit" })
+    break
+  case "help":
+  case "--help":
+  case "-h":
+    console.log(`
+  sholat - monitoring waktu sholat (jadwal dari shalat.landak.com)
+
+  today            jadwal hari ini + besok
+  next             sholat berikutnya, JSON
+  run              daemon foreground
+  once             satu tick
+  test [lead]      picu semua channel dengan alert palsu (default 5)
+  sync             tarik/bandingkan engine dari landak
+  doctor           cek prasyarat
+  install          pasang + nyalakan systemd user service
+  status           state + snapshot
+  log              tail journal systemd
+`)
+    break
+  default:
+    die(`perintah tidak dikenal: ${command} (lihat: sholat help)`)
+}

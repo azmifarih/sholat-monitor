@@ -1,0 +1,8 @@
+node_modules/
+*.log
+
+# State daemon tidak pernah masuk repo: itu milik mesin, bukan kode.
+daemon-state.json
+snapshot.json
+alert.json
+plugin.log
