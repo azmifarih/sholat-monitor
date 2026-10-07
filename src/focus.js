@@ -5,21 +5,24 @@
 // alert.json. Plugin TUI OpenCode membandingkan id itu dengan LUVUS_PANE_ID
 // miliknya sendiri, jadi hanya TUI yang sedang dilihat yang berteriak.
 
-import { execFileSync } from "node:child_process"
+import { runLuvus, failureReason } from "./luvus.js"
 
-const LUVUS = process.env.LUVUS_BIN_PATH ?? "luvus"
-const LUVUS_TIMEOUT_MS = 4_000
+const PANE_TIMEOUT_MS = 4_000
 
 /** @returns {{ pane: string|null, agent: string|null, status: string|null, source: string }} */
 export function focusedPane(opts = {}) {
   const agent = opts.agent ?? "opencode"
+
+  // Lewat runLuvus: daemon tidak perlu tahu nama sesi Luvus, dan kegagalan
+  // "luvus tidak ketemu / sesi mati" muncul sebagai alasan yang terbaca -
+  // bukan sebagai pane kosong yang terlihat seperti "tidak ada yang fokus".
+  const res = runLuvus(["pane", "list"], { timeout: opts.timeout ?? PANE_TIMEOUT_MS })
+  if (res.status !== 0) {
+    return { pane: null, agent: null, status: null, source: `error: ${failureReason(res)}` }
+  }
+
   try {
-    const raw = execFileSync(LUVUS, ["pane", "list"], {
-      encoding: "utf8",
-      timeout: LUVUS_TIMEOUT_MS,
-      stdio: ["ignore", "pipe", "ignore"],
-    })
-    const parsed = JSON.parse(raw)
+    const parsed = JSON.parse(res.stdout)
     const rows = Array.isArray(parsed?.result) ? parsed.result : (parsed?.result?.panes ?? [])
     if (rows.length === 0) return { pane: null, agent: null, status: null, source: "empty" }
 
@@ -39,7 +42,7 @@ export function focusedPane(opts = {}) {
       source: target === focused ? "focused" : "focused-tab-sibling",
     }
   } catch (error) {
-    return { pane: null, agent: null, status: null, source: `error: ${error.code ?? error.message}` }
+    return { pane: null, agent: null, status: null, source: `error: parse: ${error.message}` }
   }
 }
 

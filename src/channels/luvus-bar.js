@@ -9,6 +9,7 @@ import { spawnSync } from "node:child_process"
 import { existsSync } from "node:fs"
 import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
+import { luvusBin, failureReason } from "../luvus.js"
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..")
 const PUBLISH = join(ROOT, "luvus-bar", "publish.js")
@@ -20,14 +21,17 @@ export function available() {
 export function luvusBar(cfg, _alert) {
   if (!cfg.enabled) return { ok: false, reason: "dimatikan di config" }
 
-  // Sengaja pakai LUVUS_BIN_PATH kalau ada: itu binary yang sedang berjalan,
-  // jadi tetap benar walau ada versi lain di PATH atau socket named-pipe.
-  const luvus = process.env.LUVUS_BIN_PATH ?? "luvus"
+  // Sesi TIDAK diselesaikan di sini, melainkan di publish.js - satu tempat,
+  // sekali tanya. Yang diwariskan cuma LUVUS_BIN_PATH supaya anak memakai
+  // binary yang sama dengan yang sedang berjalan. Ini juga yang membuat hook
+  // `[[startup]]` benar: hook itu dijalankan Luvus, bukan daemon, jadi publish.js
+  // harus bisa menyelesaikan sesi sendiri.
   const res = spawnSync(process.execPath, [PUBLISH], {
     encoding: "utf8",
     timeout: 15_000,
-    env: { ...process.env, LUVUS_BIN_PATH: luvus },
+    env: { ...process.env, LUVUS_BIN_PATH: luvusBin() },
   })
-  if (res.status !== 0) return { ok: false, reason: res.stderr?.trim() || `exit ${res.status}` }
+  // publish.js mencetak alasan kegagalannya ke stderr, jadi itu yang dipakai.
+  if (res.status !== 0) return { ok: false, reason: failureReason(res) }
   return { ok: true }
 }

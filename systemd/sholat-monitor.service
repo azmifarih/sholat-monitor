@@ -95,12 +95,16 @@ PrivateUsers=false
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 
 # 2. Sesi Luvus. Tanpa LUVUS_SESSION, CLI luvus menargetkan sesi "default",
-#    dan sesi itu STOPPED - jadi perintahnya jalan tapi tidak sampai ke UI
-#    yang sedang dipakai. Sesi yang hidup saat ini bernama "probe".
-#    CATATAN: nama sesi ini hardcoded. Kalau `luvus session list` menunjukkan
-#    sesi running dengan nama lain, ubah baris ini lalu
-#    `systemctl --user daemon-reload && systemctl --user restart sholat-monitor`.
-#    Gejala kalau lupa: channel luvus gagal, channel desktop tetap ok.
+#    dan sesi itu biasanya STOPPED - jadi perintahnya jalan tapi tidak sampai
+#    ke UI yang sedang dipakai.
+#
+#    Baris ini hanya PREFERENSI, bukan pengunci. Daemon memeriksa dulu bahwa
+#    sesi ini benar-benar running; kalau tidak (mis. sesi sudah diganti nama),
+#    daemon otomatis memakai sesi running yang ada dan mencatatnya di log
+#    sebagai "env-usang". Jadi tidak ada lagi kegagalan senyap di sini.
+#
+#    Isi "auto" kalau mau pemilihan sepenuhnya otomatis (selalu sesi running).
+#    Cara memeriksa sesi mana yang akhirnya dipakai: `sholat doctor`.
 Environment=LUVUS_SESSION=probe
 
 [Install]

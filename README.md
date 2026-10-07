@@ -168,19 +168,53 @@ pagi. Nyalakan kalau memang mau (`channels.sound.enabled`), atau pakai
 
 Channel `luvusBar`, `luvusNotification`, dan routing pane semuanya memanggil CLI
 `luvus`. Service `systemd --user` **tidak** mewarisi PATH shell login, jadi unit
-harus menyetel PATH sendiri, dan CLI harus diberi tahu sesi Luvus mana yang
-dipakai:
+harus menyetel PATH sendiri:
 
 ```ini
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
-Environment=LUVUS_SESSION=<sesi yang berstatus running di `luvus session list`>
 ```
 
-Tanpa keduanya, channel Luvus gagal dengan `exit null` (proses tidak jalan)
-sementara channel `desktop` tetap `ok` — gejalanya "alert desktop muncul, toast
-dan bar Luvus tidak". `LUVUS_SESSION` **hardcoded** di unit; kalau nama sesi
-Luvus berubah, ubah baris itu juga. Cara memeriksa sesi yang hidup dan cara
-membuktikan environment-nya benar ada di bagian *Kalau ada yang tidak beres*.
+Tanpa baris itu, channel Luvus gagal karena `luvus` tidak ketemu — dulu
+dilaporkan sebagai `exit null`, yang terbaca seperti "ditolak" padahal
+prosesnya **tidak pernah jalan**. Channel `desktop` tetap `ok` karena
+`notify-send` ada di `/usr/bin`, jadi gejalanya menyesatkan: "alert desktop
+muncul, toast dan bar Luvus tidak".
+
+#### Sesi Luvus: dicari, bukan dikunci
+
+`luvus` tanpa `LUVUS_SESSION` menargetkan sesi `default`, dan sesi itu biasanya
+`stopped` — jadi perintahnya jalan tapi tidak sampai ke UI yang sedang dipakai.
+Karena itu `LUVUS_SESSION` boleh disetel di unit:
+
+```ini
+Environment=LUVUS_SESSION=probe
+```
+
+Tapi baris itu **hanya preferensi, bukan pengunci**. Daemon memeriksa dulu bahwa
+sesi itu benar-benar running:
+
+| Keadaan | Yang dipakai | `source` |
+|---|---|---|
+| `LUVUS_SESSION` diset dan sesinya running | sesi itu | `env` |
+| `LUVUS_SESSION` diset tapi sesinya sudah tidak ada | sesi running yang ditemukan sendiri | `env-usang` |
+| `LUVUS_SESSION` kosong | sesi running yang ditemukan sendiri | `ditemukan` |
+| `LUVUS_SESSION=auto` | selalu sesi running (env diabaikan) | `ditemukan` |
+| tidak ada sesi running | biarkan gagal, jangan menebak | `tanpa-sesi` |
+| `luvus session list` tidak terbaca | `LUVUS_SESSION` dipakai apa adanya | `tidak-terbaca` |
+
+Jadi sesi boleh berganti nama kapan saja: daemon pindah sendiri, dan mencatatnya
+di log. `sholat doctor` menampilkan sesi yang akhirnya dipakai beserta asalnya:
+
+```
+ok    sesi luvus                 probe (env; hidup: probe)
+```
+
+Sesi yang ditarget juga bisa dibaca langsung dari environment daemon:
+
+```sh
+PID=$(systemctl --user show sholat-monitor -p MainPID --value)
+tr '\0' '\n' < /proc/$PID/environ | grep -E '^(PATH|LUVUS_SESSION)='
+```
 
 ### Routing ke TUI OpenCode
 
@@ -358,9 +392,10 @@ src/daemon.js                  loop tick, plan(), deliver(), state
 src/config.js                  pemuat JSONC + default + validasi
 src/prayer-times.js            hitung jadwal (memuat vendor/PrayTimes.js)
 src/sync.js                    bandingkan engine dengan server landak
+src/luvus.js                   satu pintu panggil CLI luvus: PATH + pilih sesi
 src/focus.js                   tanya Luvus: pane mana yang sedang fokus
 src/opencode-plugin.js         pasang + daftarkan plugin TUI di cli.json
-src/channels/                  desktop | opencode | luvus-bar | sound
+src/channels/                  desktop | opencode | luvus-bar | luvus-notification | sound
 vendor/PrayTimes.js            engine asli dari landak (di-vendor)
 luvus-bar/                     module Luvus `sholat.bar`
 opencode-tui/                   sumber plugin TUI OpenCode (package.json + tui.js)
@@ -384,7 +419,7 @@ State (bukan bagian repo):
 ## Uji
 
 ```sh
-node --test test/*.test.mjs      # 27 tes unit, tanpa jaringan, tanpa layar
+node --test test/*.test.mjs      # 50 tes unit, tanpa jaringan, tanpa layar
 node test/integration.mjs        # uji integrasi dengan channel dipalsukan
 ```
 
@@ -435,41 +470,49 @@ user service.
 
 Ini penyebab asli "Maghrib tidak pernah muncul di toast/notification Luvus".
 `exit null` dari `spawnSync` berarti **prosesnya tidak pernah jalan** (ENOENT),
-bukan prosesnya jalan lalu menolak. Ada dua sebab, dan keduanya soal lingkungan
-service, bukan soal jadwal:
+bukan prosesnya jalan lalu menolak. Sebabnya soal lingkungan service, bukan soal
+jadwal:
 
 1. **`~/.local/bin` tidak ada di PATH service.** `systemd --user` tidak mewarisi
    PATH shell login. `luvus` tinggal di `~/.local/bin/luvus`, jadi tidak ketemu.
    Channel `desktop` tetap `ok` karena `notify-send` ada di `/usr/bin`.
-2. **`LUVUS_SESSION` tidak diset.** Tanpa itu CLI `luvus` menargetkan sesi
-   `default`, dan sesi itu biasanya `stopped`. Perintahnya jalan, tapi tidak
-   sampai ke UI yang sedang dipakai.
+2. **Sesi Luvus tidak disebut.** CLI `luvus` lalu menargetkan sesi `default`,
+   dan sesi itu biasanya `stopped`. Perintahnya jalan, tapi tidak sampai ke UI
+   yang sedang dipakai.
 
-Periksa sesi yang benar-benar hidup, lalu samakan dengan unit:
+Sejak `src/luvus.js` ada, sebab nomor 2 tidak lagi bisa mematikan channel:
+kalau `LUVUS_SESSION` menunjuk sesi yang sudah tidak ada, daemon memilih sesi
+running yang ada dan mencatatnya sebagai `env-usang`. Sebab nomor 1 masih nyata,
+karena tidak ada yang bisa mencari binary yang tidak ada di PATH.
+
+Periksa keduanya sekaligus:
 
 ```sh
-luvus session list          # cari baris berstatus "running"
+sholat doctor                 # baris "sesi luvus" + "luvus server"
+luvus session list            # cari baris berstatus "running"
 rg '^Environment' ~/.config/systemd/user/sholat-monitor.service
 ```
 
-Di unit harus ada keduanya:
+Yang wajib ada di unit cuma PATH:
 
 ```ini
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
-Environment=LUVUS_SESSION=<nama sesi running>
 ```
 
-Setelah diubah: `systemctl --user daemon-reload && systemctl --user restart sholat-monitor`.
+Sesudah mengubah unit: `systemctl --user daemon-reload && systemctl --user restart sholat-monitor`.
 
 Cara memastikan perbaikan ini benar-benar berlaku untuk daemon (bukan cuma untuk
-shell-mu): jalankan perintah Luvus dengan environment daemon yang sebenarnya.
+shell-mu): baca environment daemon yang sebenarnya.
 
 ```sh
 PID=$(systemctl --user show sholat-monitor -p MainPID --value)
 tr '\0' '\n' < /proc/$PID/environ | grep -E '^(PATH|LUVUS_SESSION)='
+tail -5 ~/.local/state/sholat-monitor/daemon.log | grep 'sesi luvus'
 ```
 
-Kalau baris `LUVUS_SESSION` tidak muncul di situ, unit belum terpasang ulang.
+Baris `sesi luvus: ... (env-usang; ...)` berarti daemon sedang menolong dirinya
+sendiri. Kalau `PATH` sudah benar tapi channel tetap gagal, `failureReason()`
+akan menyebut binary dan PATH-nya di `daemon.log` — tidak lagi `exit null`.
 
 **Widget bar hilang dari bar.** Pastikan module-nya masih ter-link:
 

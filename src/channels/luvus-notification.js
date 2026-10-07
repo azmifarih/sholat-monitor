@@ -10,23 +10,21 @@
 // nonaktif - jadi "toast dan notification Luvus" memang tidak pernah menerima
 // alert apa pun, bukan ketinggalan update.
 
+import { existsSync } from "node:fs"
 import { spawnSync } from "node:child_process"
-
-function run(luvus, args) {
-  return spawnSync(luvus, args, { encoding: "utf8", timeout: 10_000 })
-}
+import { luvusBin, runLuvus, failureReason } from "../luvus.js"
 
 export function available() {
-  const r = spawnSync("command", ["-v", "luvus"], { shell: true, encoding: "utf8" })
-  return r.status === 0
+  const bin = luvusBin()
+  // Kalau LUVUS_BIN_PATH menunjuk path lengkap, `command -v` tidak relevan -
+  // yang benar adalah memeriksa berkasnya. Kalau tidak, baru cari di PATH.
+  if (bin.includes("/")) return existsSync(bin)
+  return spawnSync("command", ["-v", bin], { shell: true, encoding: "utf8" }).status === 0
 }
 
 export function luvusNotification(cfg, alert) {
   if (!cfg.enabled) return { ok: false, reason: "dimatikan di config" }
 
-  // Pakai binary yang sedang berjalan kalau ada (sama seperti channel bar):
-  // PATH bisa menunjuk versi lain, dan socket yang benar adalah yang ini.
-  const luvus = process.env.LUVUS_BIN_PATH ?? "luvus"
   const text = alert.body
 
   // Kedua langkah dijalankan keduanya, bukan berhenti di yang pertama gagal:
@@ -34,13 +32,15 @@ export function luvusNotification(cfg, alert) {
   // pertama yang ditemukan supaya log menunjuk ke masalah yang nyata.
   const failures = []
 
-  const toast = run(luvus, ["ui", "toast", text])
-  if (toast.status !== 0) failures.push(`toast: ${toast.stderr?.trim() || `exit ${toast.status}`}`)
+  // runLuvus, bukan spawnSync langsung: sesi Luvus diurus di satu tempat
+  // (src/luvus.js), dan kegagalannya diterjemahkan jadi alasan yang terbaca.
+  const toast = runLuvus(["ui", "toast", text])
+  if (toast.status !== 0) failures.push(`toast: ${failureReason(toast)}`)
 
   // level alert (info|warning) langsung cocok dengan --level milik Luvus.
   const level = ["info", "success", "warning", "error"].includes(alert.level) ? alert.level : "info"
-  const push = run(luvus, ["ui", "notification", "push", "--text", text, "--level", level])
-  if (push.status !== 0) failures.push(`notification: ${push.stderr?.trim() || `exit ${push.status}`}`)
+  const push = runLuvus(["ui", "notification", "push", "--text", text, "--level", level])
+  if (push.status !== 0) failures.push(`notification: ${failureReason(push)}`)
 
   if (failures.length > 0) return { ok: false, reason: failures.join("; ") }
   return { ok: true }

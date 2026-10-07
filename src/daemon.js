@@ -14,6 +14,7 @@ import * as desktopChannel from "./channels/desktop.js"
 import * as opencodeChannel from "./channels/opencode.js"
 import * as barChannel from "./channels/luvus-bar.js"
 import * as luvusNotifChannel from "./channels/luvus-notification.js"
+import { resolveLuvus } from "./luvus.js"
 import * as soundChannel from "./channels/sound.js"
 import { syncVendor } from "./sync.js"
 
@@ -369,6 +370,14 @@ export function run(cfg = loadConfig(), deps = {}) {
   state.startedAt = state.startedAt ?? new Date().toISOString()
   for (const problem of cfg.__problems ?? []) log(`config: ${problem}`)
   log(`daemon mulai, pid ${process.pid}, tick ${cfg.daemon.tickSeconds}s`)
+
+  // Sesi Luvus yang dipakai dicatat sekali di awal. Ini yang membuat "kok tidak
+  // ada toast?" bisa dijawab langsung: "env-usang" berarti LUVUS_SESSION di unit
+  // sudah tidak menunjuk sesi yang hidup, dan daemon pindah sesi sendiri -
+  // jadi tidak perlu ada yang menebak.
+  const luvus = resolveLuvus()
+  log(`sesi luvus: ${luvus.session ?? "tidak ada sesi running"} (${luvus.source}; hidup: ${luvus.running.join(", ") || "-"})`)
+
   writeSnapshot(cfg)
 
   let stopping = false

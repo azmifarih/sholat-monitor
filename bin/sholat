@@ -20,6 +20,7 @@ import { loadConfig, CONFIG_PATH, stripJsonComments } from "../src/config.js"
 import { schedule, fmtCountdown } from "../src/prayer-times.js"
 import { tick, run, loadState, writeSnapshot, log, hTag, STATE_DIR, LOG_FILE, SNAPSHOT_FILE, STATE_FILE } from "../src/daemon.js"
 import { syncVendor, vendorStatus } from "../src/sync.js"
+import { resolveLuvus, runLuvus } from "../src/luvus.js"
 import { installTuiPlugin, pluginStatus } from "../src/opencode-plugin.js"
 import * as desktopChannel from "../src/channels/desktop.js"
 import * as opencodeChannel from "../src/channels/opencode.js"
@@ -192,8 +193,25 @@ function cmdDoctor(cfg) {
   push(vendor.exists, "engine PrayTimes.js", vendor.exists ? `${vendor.bytes} byte, sha ${vendor.sha256.slice(0, 12)}` : "vendor/PrayTimes.js hilang")
 
   push(has("curl"), "curl (sinkron engine)", "http ke landak")
-  const luvusBin = process.env.LUVUS_BIN_PATH ?? "luvus"
-  push(has("curl") && spawnSync(luvusBin, ["server", "status"], { encoding: "utf8" }).status === 0, "luvus server", luvusBin)
+
+  // Sesi Luvus adalah hal yang paling sering salah, jadi ditampilkan apa adanya:
+  // sesi mana yang akan ditarget, dan dari mana nama itu berasal. `source`
+  // membedakan "dari env" (disetel sadar) dan "ditemukan" (hasil pencarian) -
+  // tanpa itu, "kok cuma satu sesi yang dapat notif?" tidak bisa dijawab.
+  //
+  // Cek luvus sengaja TIDAK digantung pada curl: sebelumnya begitu, jadi curl
+  // yang hilang membuat baris ini merah padahal Luvus-nya sehat.
+  const luvus = resolveLuvus()
+  const sesiOk = ["env", "env-usang", "ditemukan"].includes(luvus.source)
+  push(runLuvus(["server", "status"]).status === 0, "luvus server", luvus.bin)
+  push(
+    sesiOk,
+    "sesi luvus",
+    luvus.session
+      ? `${luvus.session} (${luvus.source}; hidup: ${luvus.running.join(", ") || "-"})`
+      : `tidak ada sesi running (${luvus.source})`,
+  )
+
   push(barChannel.available(), "modul bar sholat.bar", "luvus-bar/publish.js")
   push(desktopChannel.available(), "notify-send", "channel desktop")
   push(has("systemctl"), "systemd", "user service")

@@ -7,14 +7,13 @@
 //   node publish.js          -> hitung lalu push ke Luvus Bar
 //   node publish.js --json   -> cetak payload JSON saja (untuk debug)
 
-import { spawnSync } from "node:child_process"
 import { loadConfig } from "../src/config.js"
 import { schedule, fmtCountdown } from "../src/prayer-times.js"
+import { runLuvus, failureReason } from "../src/luvus.js"
 
 // loadConfig, bukan JSON.parse: config.json boleh dikomentari, dan semua
 // pembacaan config harus lewat satu pintu agar tidak ada yang gagal diam-diam.
 const cfg = loadConfig()
-const luvus = process.env.LUVUS_BIN_PATH ?? "luvus"
 
 // Widget ini milik module, jadi cukup pakai id lokal: "next".
 const BAR_ID = "next"
@@ -52,14 +51,17 @@ if (process.argv.includes("--json")) {
   process.exit(0)
 }
 
-const res = spawnSync(
-  luvus,
+// runLuvus: sesi dan binary Luvus diselesaikan di src/luvus.js. Penting di sini
+// karena skrip ini dipanggil dari dua arah - daemon, dan hook [[startup]] milik
+// Luvus sendiri. Kalau environment dari Luvus tidak menyetel LUVUS_SESSION,
+// skrip ini tetap menemukan sesi yang hidup.
+const res = runLuvus(
   ["bar", "push", "--id", BAR_ID, "--content", JSON.stringify(content), "--compact-content", JSON.stringify(compact)],
-  { encoding: "utf8" },
+  { timeout: 10_000 },
 )
 
 if (res.status !== 0) {
   // Modul tidak boleh menjatuhkan UI; cukup catat, `luvus module log` yang baca.
-  console.error(res.stderr || `bar push gagal (${res.status})`)
+  console.error(failureReason(res))
   process.exit(res.status ?? 1)
 }
