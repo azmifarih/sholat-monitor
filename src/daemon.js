@@ -37,7 +37,7 @@ const LABEL = {
   isha: "Isya",
 }
 
-const EMPTY_STATE = { fired: {}, ticks: 0, startedAt: null, lastTickAt: null, lastSyncAt: null }
+const EMPTY_STATE = { fired: {}, ticks: 0, startedAt: null, lastTickAt: null, lastSyncAt: null, barOk: null }
 
 // ---------------------------------------------------------------- logging
 
@@ -78,7 +78,7 @@ export function loadState() {
   // `fired` harus objek baru, bukan rujukan ke EMPTY_STATE. Dengan shallow copy,
   // semua pemanggil dalam satu proses akan menulis ke peta yang sama dan saling
   // menimpa - muncul sebagai "alert hilang" atau "alert dobel".
-  const blank = () => ({ fired: {}, ticks: 0, startedAt: null, lastTickAt: null, lastSyncAt: null })
+  const blank = () => ({ fired: {}, ticks: 0, startedAt: null, lastTickAt: null, lastSyncAt: null, barOk: null })
   try {
     if (!existsSync(STATE_FILE)) return blank()
     const parsed = JSON.parse(readFileSync(STATE_FILE, "utf8"))
@@ -243,7 +243,18 @@ export function tick(cfg, state, deps = {}) {
 
   // Bar widget selalu direpaint supaya hitungan mundurnya tetap hidup,
   // walaupun tidak ada alert yang jatuh tempo.
+  //
+  // Hasilnya dicatat HANYA saat berubah (ok -> gagal atau sebaliknya). Kalau
+  // dicatat tiap tick, log jadi satu baris per menit dan justru menyembunyikan
+  // alert. Kalau tidak dicatat sama sekali, bar bisa mati diam-diam selama
+  // berhari-hari - persis kegagalan yang pernah terjadi: service hijau, jadwal
+  // benar, tapi widget beku di sholat yang salah.
   const barResult = bar.luvusBar(cfg.channels.luvusBar, null)
+  const barOk = Boolean(barResult?.ok)
+  if (state.barOk !== barOk) {
+    log(barOk ? "bar ok (widget hidup lagi)" : `bar GAGAL: ${barResult?.reason ?? "alasan tidak diketahui"}`)
+    state.barOk = barOk
+  }
 
   const fired = []
   const events = plan(cfg, now)

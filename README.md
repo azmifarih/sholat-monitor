@@ -164,6 +164,24 @@ benar-benar merebut perhatian. Itu bagus saat kamu di meja, buruk kalau jam 4
 pagi. Nyalakan kalau memang mau (`channels.sound.enabled`), atau pakai
 `quiet` untuk membungkam jam-jam tertentu.
 
+### Prasyarat lingkungan Luvus (mudah terlewat)
+
+Channel `luvusBar`, `luvusNotification`, dan routing pane semuanya memanggil CLI
+`luvus`. Service `systemd --user` **tidak** mewarisi PATH shell login, jadi unit
+harus menyetel PATH sendiri, dan CLI harus diberi tahu sesi Luvus mana yang
+dipakai:
+
+```ini
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=LUVUS_SESSION=<sesi yang berstatus running di `luvus session list`>
+```
+
+Tanpa keduanya, channel Luvus gagal dengan `exit null` (proses tidak jalan)
+sementara channel `desktop` tetap `ok` — gejalanya "alert desktop muncul, toast
+dan bar Luvus tidak". `LUVUS_SESSION` **hardcoded** di unit; kalau nama sesi
+Luvus berubah, ubah baris itu juga. Cara memeriksa sesi yang hidup dan cara
+membuktikan environment-nya benar ada di bagian *Kalau ada yang tidak beres*.
+
 ### Routing ke TUI OpenCode
 
 Daemon tidak tahu terminal mana yang sedang kamu lihat. Luvus tahu. Jadi:
@@ -413,12 +431,58 @@ Begitu juga `ProtectSystem=strict`, `ProtectHome=read-only`, `ReadWritePaths`,
 Aturan cepatnya: kalau sebuah direktif menyebut nama capability, jangan pakai di
 user service.
 
+**Channel `luvus` gagal dengan `exit null`, padahal channel `desktop` ok.**
+
+Ini penyebab asli "Maghrib tidak pernah muncul di toast/notification Luvus".
+`exit null` dari `spawnSync` berarti **prosesnya tidak pernah jalan** (ENOENT),
+bukan prosesnya jalan lalu menolak. Ada dua sebab, dan keduanya soal lingkungan
+service, bukan soal jadwal:
+
+1. **`~/.local/bin` tidak ada di PATH service.** `systemd --user` tidak mewarisi
+   PATH shell login. `luvus` tinggal di `~/.local/bin/luvus`, jadi tidak ketemu.
+   Channel `desktop` tetap `ok` karena `notify-send` ada di `/usr/bin`.
+2. **`LUVUS_SESSION` tidak diset.** Tanpa itu CLI `luvus` menargetkan sesi
+   `default`, dan sesi itu biasanya `stopped`. Perintahnya jalan, tapi tidak
+   sampai ke UI yang sedang dipakai.
+
+Periksa sesi yang benar-benar hidup, lalu samakan dengan unit:
+
+```sh
+luvus session list          # cari baris berstatus "running"
+rg '^Environment' ~/.config/systemd/user/sholat-monitor.service
+```
+
+Di unit harus ada keduanya:
+
+```ini
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=LUVUS_SESSION=<nama sesi running>
+```
+
+Setelah diubah: `systemctl --user daemon-reload && systemctl --user restart sholat-monitor`.
+
+Cara memastikan perbaikan ini benar-benar berlaku untuk daemon (bukan cuma untuk
+shell-mu): jalankan perintah Luvus dengan environment daemon yang sebenarnya.
+
+```sh
+PID=$(systemctl --user show sholat-monitor -p MainPID --value)
+tr '\0' '\n' < /proc/$PID/environ | grep -E '^(PATH|LUVUS_SESSION)='
+```
+
+Kalau baris `LUVUS_SESSION` tidak muncul di situ, unit belum terpasang ulang.
+
 **Widget bar hilang dari bar.** Pastikan module-nya masih ter-link:
 
 ```sh
 luvus module list | grep sholat.bar
 node luvus-bar/publish.js     # coba push manual
 ```
+
+Daemon mencatat hasil repaint bar **saat berubah saja**: satu baris `bar ok
+(widget hidup lagi)` saat pulih, dan `bar GAGAL: ...` saat mulai gagal. Tidak ada
+baris per menit - kalau ada, log justru membanjir dan menyembunyikan alert.
+Kalau widget beku di sholat yang salah tapi tidak ada baris `bar GAGAL`,
+berarti push-nya sukses dan masalahnya di sisi tampilan Luvus.
 
 **Tidak yakin plugin TUI jalan?** Lihat `~/.local/state/sholat-monitor/plugin.log`.
 Ada baris `loaded` setiap kali plugin dimuat, dan `alert` setiap kali toast
