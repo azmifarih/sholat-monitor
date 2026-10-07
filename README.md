@@ -78,9 +78,12 @@ node bin/sholat doctor     # cek semua prasyarat
 node bin/sholat install    # pasang + nyalakan systemd --user service
 ```
 
-`install` menyalin unit ke `~/.config/systemd/user/`, menjalankan
-`enable --now`, dan mengaktifkan **linger** supaya daemon tetap jalan setelah
-logout — bukan hanya selama sesi login.
+`install` melakukan tiga hal:
+
+1. Menyalin unit ke `~/.config/systemd/user/`, lalu `enable --now`.
+2. Mengaktifkan **linger** supaya daemon tetap jalan setelah logout — bukan
+   hanya selama sesi login.
+3. Memasang **plugin TUI OpenCode** (salin berkas + daftarkan di `cli.json`).
 
 Widget Luvus Bar dideklarasikan oleh module `sholat.bar` di `luvus-bar/`, yang
 dipasang dengan `luvus module link` (sekali saja).
@@ -173,17 +176,24 @@ sampai).
 
 ### Memasang plugin TUI
 
-Sumbernya di `opencode-tui/`. Plugin harus berada di luar repo, di folder yang
-dideklarasikan `package.json`-nya sendiri:
+`sholat install` sudah menangani ini: berkasnya disalin ke
+`~/.config/opencode/sholat-alert/`, lalu `./sholat-alert` didaftarkan di
+`~/.config/opencode/cli.json` pada key **`plugins`** (plural).
+
+Aman dijalankan berulang: entri yang sudah ada tidak ditambahkan dua kali,
+`cli.json` dicadangkan sebelum diubah, dan kalau file itu tidak bisa dibaca
+sebagai JSON, **tidak ditimpa** — cukup diberi tahu cara mendaftarkan manual.
+Plugin baru dimuat setelah OpenCode dijalankan ulang.
+
+Kalau mau manual, sumbernya di `opencode-tui/` (`package.json` + `tui.js`):
 
 ```sh
 mkdir -p ~/.config/opencode/sholat-alert
 cp opencode-tui/package.json opencode-tui/tui.js ~/.config/opencode/sholat-alert/
 ```
 
-Lalu daftarkan di `~/.config/opencode/cli.json` pada key **`plugins`** (plural):
-
 ```jsonc
+// ~/.config/opencode/cli.json
 {
   "plugins": ["./sholat-alert"]
 }
@@ -317,12 +327,13 @@ src/config.js                  pemuat JSONC + default + validasi
 src/prayer-times.js            hitung jadwal (memuat vendor/PrayTimes.js)
 src/sync.js                    bandingkan engine dengan server landak
 src/focus.js                   tanya Luvus: pane mana yang sedang fokus
+src/opencode-plugin.js         pasang + daftarkan plugin TUI di cli.json
 src/channels/                  desktop | opencode | luvus-bar | sound
 vendor/PrayTimes.js            engine asli dari landak (di-vendor)
 luvus-bar/                     module Luvus `sholat.bar`
 opencode-tui/                   sumber plugin TUI OpenCode (package.json + tui.js)
 systemd/sholat-monitor.service unit systemd
-test/                          20 tes unit + uji integrasi
+test/                          27 tes unit + uji integrasi
 ```
 
 State (bukan bagian repo):
@@ -341,7 +352,7 @@ State (bukan bagian repo):
 ## Uji
 
 ```sh
-node --test test/*.test.mjs      # 20 tes unit, tanpa jaringan, tanpa layar
+node --test test/*.test.mjs      # 27 tes unit, tanpa jaringan, tanpa layar
 node test/integration.mjs        # uji integrasi dengan channel dipalsukan
 ```
 

@@ -12,7 +12,7 @@
 //   sholat install          pasang + nyalakan service systemd user
 //   sholat log              tail log daemon
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync, copyFileSync, chmodSync } from "node:fs"
+import { readFileSync, mkdirSync, existsSync, copyFileSync, chmodSync } from "node:fs"
 import { spawnSync } from "node:child_process"
 import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -20,6 +20,7 @@ import { loadConfig, CONFIG_PATH, stripJsonComments } from "../src/config.js"
 import { schedule, fmtCountdown } from "../src/prayer-times.js"
 import { tick, run, loadState, writeSnapshot, log, STATE_DIR, LOG_FILE, SNAPSHOT_FILE, STATE_FILE } from "../src/daemon.js"
 import { syncVendor, vendorStatus } from "../src/sync.js"
+import { installTuiPlugin, pluginStatus } from "../src/opencode-plugin.js"
 import * as desktopChannel from "../src/channels/desktop.js"
 import * as opencodeChannel from "../src/channels/opencode.js"
 import * as barChannel from "../src/channels/luvus-bar.js"
@@ -29,6 +30,11 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..")
 const UNIT_SRC = join(ROOT, "systemd", "sholat-monitor.service")
 const UNIT_DIR = join(process.env.HOME, ".config", "systemd", "user")
 const UNIT_DEST = join(UNIT_DIR, "sholat-monitor.service")
+
+// Plugin TUI OpenCode: sumbernya di repo, tujuan pemasangannya di folder config
+// OpenCode. Folder itu di luar repo karena OpenCode memuatnya berdasarkan
+// package.json sendiri (exports "./tui"), bukan sebagai bagian dari proyek ini.
+const PLUGIN_SRC = join(ROOT, "opencode-tui")
 
 const PRAYER_ROWS = [
   ["fajr", "Shubuh", "فجر"],
@@ -191,6 +197,17 @@ function cmdDoctor(cfg) {
   const unit = existsSync(UNIT_DEST)
   lines.push(`  info   systemd unit          ${unit ? UNIT_DEST : "belum dipasang (sholat install)"}`)
 
+  // Plugin TUI: dua bagian yang bisa terpisah - berkasnya tersalin, dan
+  // terdaftar di cli.json. Salah satu saja tidak cukup, jadi keduanya diperiksa.
+  const plugin = pluginStatus()
+  lines.push(
+    `  info   plugin TUI OpenCode   ${
+      plugin.ok
+        ? plugin.dir
+        : `belum lengkap (berkas ${plugin.files ? "ada" : "tidak ada"}, terdaftar ${plugin.registered ? "ya" : "tidak"}) - jalankan: sholat install`
+    }`,
+  )
+
   const failed = lines.filter((l) => l.trim().startsWith("GAGAL"))
   lines.push("", failed.length === 0 ? "  Semua prasyarat terpenuhi.\n" : `  ${failed.length} prasyarat belum terpenuhi.\n`)
   console.log(lines.join("\n"))
@@ -217,7 +234,17 @@ function cmdInstall(cfg) {
   const linger = spawnSync("loginctl", ["enable-linger", process.env.USER], { encoding: "utf8" })
   const lingerOk = linger.status === 0
 
+  const plugin = installTuiPlugin({ srcDir: PLUGIN_SRC })
+
   writeSnapshot(cfg)
+
+  const pluginLine = !plugin.ok
+    ? `GAGAL: ${plugin.reason}`
+    : plugin.registered === "sudah"
+      ? "sudah terdaftar di cli.json"
+      : plugin.registered === "baru"
+        ? "terdaftar di cli.json (baru)"
+        : "disalin, belum terdaftar"
 
   console.log(`
   Terpasang:
@@ -225,10 +252,14 @@ function cmdInstall(cfg) {
     config   ${CONFIG_PATH}
     state    ${STATE_DIR}
     log      ${LOG_FILE}
+    plugin   ${pluginStatus().dir}
 
   systemd   ${enable.stdout?.trim().split("\n").pop() ?? "aktif"}
   linger    ${lingerOk ? "aktif (jalan walau tidak login)" : `GAGAL: ${linger.stderr?.trim()}`}
+  plugin    ${pluginLine}
+${(plugin.notes ?? []).map((n) => `            ${n}`).join("\n")}
 
+  Catatan: plugin TUI dimuat saat OpenCode dijalankan ulang.
   Perintah:
     systemctl --user status sholat-monitor
     journalctl --user -u sholat-monitor -f
