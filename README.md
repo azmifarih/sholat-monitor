@@ -149,6 +149,7 @@ State yang lebih dari 3 hari dibuang otomatis, dan log diputar sendiri di
 | `desktop` | `notify-send` — notifikasi GNOME yang muncul di layar | **aktif** |
 | `opencode` | menulis `alert.json`, dibaca plugin TUI OpenCode | **aktif** |
 | `luvusBar` | repaint widget "Waktu Sholat" di bar Luvus | **aktif** |
+| `luvusNotification` | `luvus ui toast` + `notification push` — toast & notification center Luvus | **aktif** |
 | `sound` | memutar adhan dari server landak | **nonaktif** |
 
 **Kenapa desktop yang utama.** Toast di dalam TUI hanya kelihatan kalau TUI
@@ -288,6 +289,17 @@ Contoh `perPrayer` — Isya hanya info, tanpa notifikasi desktop:
 | `targetFocusedPane` | tulis pane fokus, jadi hanya TUI yang dilihat yang toast | `true` |
 
 **`luvusBar`** — `{ "enabled": true }`.
+
+**`luvusNotification`**
+
+| Kunci | Arti | Bawaan |
+|---|---|---|
+| `enabled` | nyala/mati | `true` |
+| `atLeadMinutes` | hanya lead ini yang dikirim ke Luvus | `[5, 0, -5, -10]` |
+
+Toast berkedip satu baris di UI Luvus, notification masuk ke daftar yang bisa
+dibaca ulang. Lead-nya dibatasi sama seperti toast TUI karena keduanya permukaan
+berisik yang sama; notifikasi desktop tetap menerima semua lead tanpa filter.
 
 **`sound`**
 

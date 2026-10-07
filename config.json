@@ -98,6 +98,11 @@
     // Widget Luvus Bar (module sholat.bar).
     "luvusBar": { "enabled": true },
 
+    // Toast + notification center Luvus (luvus ui toast / notification push).
+    // Hanya lead yang sama dengan toast TUI, biar tidak dobel berisik -
+    // notifikasi desktop sudah menerima semua lead tanpa filter.
+    "luvusNotification": { "enabled": true, "atLeadMinutes": [5, 0, -5, -10] },
+
     // Suara adhan. NONAKTIF secara bawaan: suara benar-benar merebut
     // perhatian, bagus saat di meja, buruk kalau jam 4 pagi.
     "sound": {

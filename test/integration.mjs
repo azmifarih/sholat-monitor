@@ -43,6 +43,7 @@ function recorder() {
     calls,
     desktop: { desktop: (c, a) => (calls.push({ ch: "desktop", ...a }), { ok: true }) },
     opencode: { opencode: (c, a) => (calls.push({ ch: "opencode", ...a }), { ok: true, pane: "1" }) },
+    luvusNotification: { luvusNotification: (c, a) => (calls.push({ ch: "luvus", ...a }), { ok: true }) },
     bar: { luvusBar: () => (calls.push({ ch: "bar" }), { ok: true }) },
     sound: { sound: () => (calls.push({ ch: "sound" }), { ok: true }) },
   }

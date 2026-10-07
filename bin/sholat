@@ -24,6 +24,7 @@ import { installTuiPlugin, pluginStatus } from "../src/opencode-plugin.js"
 import * as desktopChannel from "../src/channels/desktop.js"
 import * as opencodeChannel from "../src/channels/opencode.js"
 import * as barChannel from "../src/channels/luvus-bar.js"
+import * as luvusNotifChannel from "../src/channels/luvus-notification.js"
 import * as soundChannel from "../src/channels/sound.js"
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..")
@@ -140,6 +141,14 @@ function cmdTest(cfg, leadArg) {
       critical: true,
     })
     console.log(`  opencode: ${results.opencode.ok ? "ok, alert.json ditulis" : "gagal: " + results.opencode.reason}` + (results.opencode.pane ? ` (target pane ${results.opencode.pane})` : " (tanpa target pane)"))
+  }
+
+  if (cfg.channels.luvusNotification?.enabled) {
+    results.luvus = luvusNotifChannel.luvusNotification(cfg.channels.luvusNotification, {
+      body: `${whenText} — ${event.label} ${event.clock} · ${cfg.location.kota} · ini alert palsu`,
+      level: "warning",
+    })
+    console.log(`  luvus   : ${results.luvus.ok ? "ok, toast + notification terkirim" : "gagal: " + results.luvus.reason}`)
   }
 
   if (cfg.channels.luvusBar.enabled) {

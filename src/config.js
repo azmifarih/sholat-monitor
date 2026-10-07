@@ -120,9 +120,11 @@ export const DEFAULTS = {
       volume: 40,
       atLeadMinutes: [0],
     },
-    // Tidak dipakai: notifikasi dan toast Luvus sengaja dibiarkan seperti
-    // adanya. Bar widget (channels.luvusBar) tetap aktif.
-    luvusNotification: { enabled: false },
+    // Toast + notification center milik Luvus (luvus ui toast / notification
+    // push). Ini rumah asli alert di UI Luvus; di-gate sama seperti toast TUI
+    // OpenCode supaya tidak dobel dengan yang sudah muncul di notifikasi
+    // desktop yang tanpa filter.
+    luvusNotification: { enabled: true, atLeadMinutes: [5, 0, -5, -10] },
   },
 
   // Jam tenang: alert yang jatuh di rentang ini dilewati. Sepanjang malam
@@ -208,6 +210,7 @@ export function forPrayer(cfg, prayerKey) {
     leadMinutes: per.leadMinutes ?? cfg.alerts.leadMinutes,
     desktop: per.desktop,
     opencode: per.opencode,
+    luvusNotification: per.luvusNotification,
     sound: per.sound,
   }
 }

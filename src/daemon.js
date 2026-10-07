@@ -13,6 +13,7 @@ import { loadConfig, forPrayer, inQuietHours } from "./config.js"
 import * as desktopChannel from "./channels/desktop.js"
 import * as opencodeChannel from "./channels/opencode.js"
 import * as barChannel from "./channels/luvus-bar.js"
+import * as luvusNotifChannel from "./channels/luvus-notification.js"
 import * as soundChannel from "./channels/sound.js"
 import { syncVendor } from "./sync.js"
 
@@ -183,6 +184,7 @@ export function deliver(cfg, event, deps = {}) {
   const desktop = deps.desktop ?? desktopChannel
   const opencode = deps.opencode ?? opencodeChannel
   const sound = deps.sound ?? soundChannel
+  const luvusNotif = deps.luvusNotification ?? luvusNotifChannel
 
   const alert = alertText(cfg, event)
   const results = {}
@@ -194,6 +196,18 @@ export function deliver(cfg, event, deps = {}) {
 
   if (cfg.channels.opencode.enabled && cfg.channels.opencode.atLeadMinutes.includes(event.lead)) {
     results.opencode = opencode.opencode(cfg.channels.opencode, alert)
+  }
+
+  // Toast + notification center Luvus. Di-gate sama ketatnya dengan toast TUI
+  // (atLeadMinutes), karena keduanya adalah permukaan yang sama-sama berisik -
+  // desktop sudah mengambil semua lead tanpa filter.
+  const luvusCfg = cfg.channels.luvusNotification
+  if (
+    luvusCfg?.enabled &&
+    event.overrides.luvusNotification !== false &&
+    luvusCfg.atLeadMinutes.includes(event.lead)
+  ) {
+    results.luvus = luvusNotif.luvusNotification(luvusCfg, alert)
   }
 
   if (event.overrides.sound !== false && cfg.channels.sound.atLeadMinutes.includes(event.lead)) {

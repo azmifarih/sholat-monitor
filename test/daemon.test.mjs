@@ -179,6 +179,7 @@ function recorder() {
     calls,
     desktop: { desktop: (c, a) => (calls.push(["desktop", a.body]), { ok: true }) },
     opencode: { opencode: (c, a) => (calls.push(["opencode", a.body]), { ok: true, pane: "1" }) },
+    luvusNotification: { luvusNotification: (c, a) => (calls.push(["luvus", a.body]), { ok: true }) },
     bar: { luvusBar: () => (calls.push(["bar"]), { ok: true }) },
     sound: { sound: () => (calls.push(["sound"]), { ok: true }) },
   }
@@ -283,6 +284,34 @@ test("perPrayer bisa mematikan channel per sholat", () => {
 
   assert.equal(deps.calls.filter(([n]) => n === "desktop").length, 0, "desktop harus mati untuk Isya")
   assert.ok(deps.calls.some(([n]) => n === "opencode"), "channel lain tetap jalan")
+})
+
+test("channel Luvus menerima H-0 tapi tidak H-15 (ikut atLeadMinutes)", () => {
+  const cfg = cfgWith({ alerts: { ...DEFAULTS.alerts, leadMinutes: [15, 0], prayers: ["dhuhr"] } })
+  const state = blankState()
+  const deps = recorder()
+
+  // Dzuhur 11:29, jadi H-15 = 11:14: desktop berbunyi, Luvus tidak -
+  // daftar atLeadMinutes sengaja tidak memuat 15, sama seperti toast TUI.
+  tick(cfg, state, { ...deps, now: new Date(2026, 9, 6, 11, 14, 0) })
+  assert.equal(deps.calls.filter(([n]) => n === "luvus").length, 0, "H-15 tidak boleh ke Luvus")
+  assert.equal(deps.calls.filter(([n]) => n === "desktop").length, 1)
+
+  // Tepat waktunya: lead 0 ada di atLeadMinutes, jadi Luvus ikut.
+  tick(cfg, state, { ...deps, now: new Date(2026, 9, 6, 11, 29, 0) })
+  const luvus = deps.calls.filter(([n]) => n === "luvus")
+  assert.equal(luvus.length, 1, "H-0 harus sampai ke toast + notification Luvus")
+  assert.match(luvus[0][1], /sekarang waktunya/)
+})
+
+test("channel Luvus mati = tidak ada panggilan, channel lain tetap jalan", () => {
+  const cfg = cfgWith({ alerts: { ...DEFAULTS.alerts, leadMinutes: [0], prayers: ["dhuhr"] } })
+  cfg.channels = { ...cfg.channels, luvusNotification: { enabled: false, atLeadMinutes: [0] } }
+  const deps = recorder()
+  tick(cfg, blankState(), { ...deps, now: new Date(2026, 9, 6, 11, 29, 0) })
+
+  assert.equal(deps.calls.filter(([n]) => n === "luvus").length, 0, "channel mati tidak boleh dipanggil")
+  assert.equal(deps.calls.filter(([n]) => n === "desktop").length, 1, "desktop tetap jalan walau Luvus mati")
 })
 
 test("bar widget selalu direpaint walau tidak ada alert", () => {
