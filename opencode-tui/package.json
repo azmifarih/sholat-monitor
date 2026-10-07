@@ -1,0 +1,6 @@
+{
+  "name": "sholat-alert",
+  "private": true,
+  "type": "module",
+  "exports": { "./tui": "./tui.js" }
+}

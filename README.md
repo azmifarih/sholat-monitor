@@ -171,8 +171,27 @@ semua TUI yang terbuka. Kalau Luvus tidak bisa dihubungi, alert tetap ditulis
 tanpa target dan semua TUI menampilkannya (lebih baik berisik daripada tidak
 sampai).
 
-Plugin TUI dipasang di `~/.config/opencode/sholat-alert/` dan didaftarkan di
-`cli.json` pada key `plugins`.
+### Memasang plugin TUI
+
+Sumbernya di `opencode-tui/`. Plugin harus berada di luar repo, di folder yang
+dideklarasikan `package.json`-nya sendiri:
+
+```sh
+mkdir -p ~/.config/opencode/sholat-alert
+cp opencode-tui/package.json opencode-tui/tui.js ~/.config/opencode/sholat-alert/
+```
+
+Lalu daftarkan di `~/.config/opencode/cli.json` pada key **`plugins`** (plural):
+
+```jsonc
+{
+  "plugins": ["./sholat-alert"]
+}
+```
+
+Catatan yang sempat menelan waktu: konfigurasi plugin TUI dibaca dari
+`cli.json`, **bukan** `tui.json` atau `tui.jsonc` — file itu diabaikan binary-nya.
+
 
 ---
 
@@ -301,7 +320,7 @@ src/focus.js                   tanya Luvus: pane mana yang sedang fokus
 src/channels/                  desktop | opencode | luvus-bar | sound
 vendor/PrayTimes.js            engine asli dari landak (di-vendor)
 luvus-bar/                     module Luvus `sholat.bar`
-opencode-tui/tui.js            sumber plugin TUI OpenCode
+opencode-tui/                   sumber plugin TUI OpenCode (package.json + tui.js)
 systemd/sholat-monitor.service unit systemd
 test/                          20 tes unit + uji integrasi
 ```
