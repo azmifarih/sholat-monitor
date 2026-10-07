@@ -152,13 +152,23 @@ export function plan(cfg, now) {
 
 export function alertText(cfg, event) {
   const lead = event.lead
-  const when = lead === 0 ? "sekarang waktunya" : lead === 1 ? "1 menit lagi" : `${lead} menit lagi`
+  const when =
+    lead > 0
+      ? lead === 1
+        ? "1 menit lagi"
+        : `${lead} menit lagi`
+      : lead === 0
+        ? "sekarang waktunya"
+        : `sudah lewat ${-lead} menit`
   const tomorrow = ymd(event.prayerAt) !== ymd(new Date())
   return {
     id: event.id,
     level: lead <= 5 ? "warning" : "info",
     title: "Waktu Sholat",
     body: `${when} — ${event.label} ${event.clock} · ${cfg.location.kota}${tomorrow ? " (besok)" : ""}`,
+    // Lead negatif (pengingat sesudah waktunya) ikut kritis: alasannya sama
+    // seperti H-0 - pengingat "sudah telat" justru harus menempel sampai
+    // dilihat, bukan hilang sendiri sementara orangnya sedang asyik bekerja.
     critical: lead <= 5,
     minutesLeft: lead,
     durationMs: lead === 0 ? 30_000 : 20_000,
@@ -201,6 +211,12 @@ function resultLabel(r) {
   if (r?.ok) return "ok"
   if (/dimatikan/i.test(r?.reason ?? "")) return "nonaktif"
   return `gagal (${r?.reason ?? "alasan tidak diketahui"})`
+}
+
+// Penanda lead untuk log: 15 = H-15, -10 = H+10 (sudah lewat 10 menit).
+// H--10 rangkap minus terbaca seperti salah ketik, padahal bukan.
+export function hTag(lead) {
+  return lead >= 0 ? `H-${lead}` : `H+${-lead}`
 }
 
 /** Satu putaran. Dipisah supaya bisa diuji tanpa menunggu waktu nyata. */
@@ -253,7 +269,7 @@ export function tick(cfg, state, deps = {}) {
 
     if (event.quiet) {
       state.fired[event.id] = { at: now.toISOString(), skipped: "jam-tenang" }
-      log(`lewati (jam tenang): ${event.label} ${event.clock} H-${event.lead}`)
+      log(`lewati (jam tenang): ${event.label} ${event.clock} ${hTag(event.lead)}`)
       continue
     }
 
@@ -261,7 +277,7 @@ export function tick(cfg, state, deps = {}) {
     state.fired[event.id] = { at: now.toISOString(), results }
     fired.push({ ...event, alert, results })
     log(
-      `ALERT ${event.label} ${event.clock} H-${event.lead} -> ` +
+      `ALERT ${event.label} ${event.clock} ${hTag(event.lead)} -> ` +
         Object.entries(results)
           .map(([name, r]) => `${name}:${resultLabel(r)}`)
           .join(" "),

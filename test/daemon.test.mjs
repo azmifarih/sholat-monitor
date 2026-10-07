@@ -120,6 +120,50 @@ test("alertText menyebut sisa menit dan kritikalitas", () => {
   assert.equal(now.durationMs, 30_000)
 })
 
+test("alertText untuk lead negatif menyebut 'sudah lewat'", () => {
+  const cfg = cfgWith()
+  const at = new Date(2026, 9, 6, 11, 29, 0)
+  const late = alertText(cfg, { lead: -5, label: "Dzuhur", clock: "11:29", prayerAt: at, id: "x@-5" })
+  assert.match(late.body, /sudah lewat 5 menit/)
+  assert.doesNotMatch(late.body, /menit lagi/, "lead negatif tidak boleh terbaca sebagai sisa waktu")
+  assert.equal(late.level, "warning")
+  // Pengingat telat harus menempel (critical), bukan hilang sendiri - itu
+  // gunanya: mengejar orang yang terlewat H-0 tadi.
+  assert.equal(late.critical, true)
+  assert.equal(late.minutesLeft, -5)
+})
+
+// ---------------------------------------------------- pengingat sesudahnya
+
+test("plan memasukkan pengingat sesudah waktu sholat", () => {
+  const cfg = cfgWith({ alerts: { ...DEFAULTS.alerts, leadMinutes: [0, -5, -10], prayers: ["fajr"] } })
+  const now = new Date(2026, 9, 6, 3, 0, 0) // Shubuh 04:04
+  const events = plan(cfg, now)
+  // Urutan ikut waktu picu: -5 dan -10 jatuh SESUDAH H-0.
+  assert.deepEqual(events.map((e) => e.lead), [0, -5, -10])
+  const minus10 = events.find((e) => e.lead === -10)
+  assert.equal(minus10.when.getTime(), new Date(2026, 9, 6, 4, 14, 0).getTime(), "04:04 + 10 menit")
+  assert.ok(minus10.id.endsWith("@-10"), "id harus beda dari lead positif supaya tidak saling menimpa")
+})
+
+test("tick memicu pengingat sesudah waktunya, paling baru yang didengar", () => {
+  const cfg = cfgWith({ alerts: { ...DEFAULTS.alerts, leadMinutes: [0, -5], prayers: ["dhuhr"] } })
+  // Dzuhur 11:29; sekarang 11:34 = sudah lewat 5 menit. H-0 (11:29) memang
+  // jatuh tempo juga, tapi situasinya sudah "telat 5 menit" - yang itu yang
+  // relevan, bukan "sekarang waktunya" yang sudah basi.
+  const state = blankState()
+  const deps = recorder()
+  const result = tick(cfg, state, { ...deps, now: new Date(2026, 9, 6, 11, 34, 0) })
+
+  assert.deepEqual(result.fired.map((f) => f.lead), [-5], "hanya pengingat terbaru yang berbunyi")
+  assert.ok(
+    deps.calls.some(([name, body]) => name === "desktop" && /sudah lewat 5 menit/.test(body)),
+    "desktop harus menerima teks 'sudah lewat'",
+  )
+  // Tick berikutnya pada waktu yang sama tidak mengulang.
+  assert.equal(tick(cfg, state, { ...deps, now: new Date(2026, 9, 6, 11, 34, 0) }).fired.length, 0)
+})
+
 // -------------------------------------------------------------------- tick
 
 // Test tidak boleh membaca state daemon yang sedang sungguhan jalan - kalau
@@ -277,7 +321,7 @@ test("state lama dibersihkan supaya tidak tumbuh", () => {
 test("config memuat dan menandai masalah", () => {
   const cfg = loadConfig()
   assert.equal(cfg.location.kota, "Semarang")
-  assert.deepEqual(cfg.alerts.leadMinutes, [15, 5, 0])
+  assert.deepEqual(cfg.alerts.leadMinutes, [15, 5, 0, -5, -10])
   assert.equal(cfg.channels.desktop.enabled, true)
   assert.equal(cfg.channels.sound.enabled, false, "suara harus mati secara bawaan")
   assert.deepEqual(cfg.__problems, [], `config bermasalah: ${cfg.__problems.join("; ")}`)

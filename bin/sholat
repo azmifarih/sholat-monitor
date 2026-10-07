@@ -18,7 +18,7 @@ import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
 import { loadConfig, CONFIG_PATH, stripJsonComments } from "../src/config.js"
 import { schedule, fmtCountdown } from "../src/prayer-times.js"
-import { tick, run, loadState, writeSnapshot, log, STATE_DIR, LOG_FILE, SNAPSHOT_FILE, STATE_FILE } from "../src/daemon.js"
+import { tick, run, loadState, writeSnapshot, log, hTag, STATE_DIR, LOG_FILE, SNAPSHOT_FILE, STATE_FILE } from "../src/daemon.js"
 import { syncVendor, vendorStatus } from "../src/sync.js"
 import { installTuiPlugin, pluginStatus } from "../src/opencode-plugin.js"
 import * as desktopChannel from "../src/channels/desktop.js"
@@ -116,14 +116,15 @@ function cmdTest(cfg, leadArg) {
     quiet: false,
     overrides: {},
   }
-  console.log(`Memicu alert palsu (H-${lead}) ke semua channel yang aktif:\n`)
+  console.log(`Memicu alert palsu (${hTag(lead)}) ke semua channel yang aktif:\n`)
+  const whenText = lead < 0 ? `sudah lewat ${-lead} menit` : `${lead} menit lagi`
   const results = {}
 
   if (cfg.channels.desktop.enabled) {
     results.desktop = desktopChannel.desktop(cfg.channels.desktop, {
       id: event.id,
       title: "Waktu Sholat (TES)",
-      body: `${lead} menit lagi — ${event.label} ${event.clock} · ${cfg.location.kota} · ini alert palsu`,
+      body: `${whenText} — ${event.label} ${event.clock} · ${cfg.location.kota} · ini alert palsu`,
       critical: lead <= 5,
       minutesLeft: lead,
     })
@@ -135,7 +136,7 @@ function cmdTest(cfg, leadArg) {
       id: event.id,
       level: "warning",
       title: "Waktu Sholat (TES)",
-      body: `${lead} menit lagi — ${event.label} ${event.clock} · ${cfg.location.kota}`,
+      body: `${whenText} — ${event.label} ${event.clock} · ${cfg.location.kota}`,
       critical: true,
     })
     console.log(`  opencode: ${results.opencode.ok ? "ok, alert.json ditulis" : "gagal: " + results.opencode.reason}` + (results.opencode.pane ? ` (target pane ${results.opencode.pane})` : " (tanpa target pane)"))

@@ -154,7 +154,9 @@ State yang lebih dari 3 hari dibuang otomatis, dan log diputar sendiri di
 **Kenapa desktop yang utama.** Toast di dalam TUI hanya kelihatan kalau TUI
 sedang aktif. Notifikasi desktop muncul di atas semua window, dan saat mendekati
 waktu sholat (≤ `criticalAtMinutes`) dikirim sebagai `urgency=critical` sehingga
-**tidak hilang sendiri**.
+**tidak hilang sendiri**. Pengingat lead negatif ("sudah lewat 5/10 menit")
+ikut aturan yang sama (`-5 ≤ 5`): telat justru berarti harus **lebih** menempel,
+bukan lebih cepat hilang.
 
 **Kenapa suara nonaktif secara bawaan.** Suara adalah satu-satunya channel yang
 benar-benar merebut perhatian. Itu bagus saat kamu di meja, buruk kalau jam 4
@@ -253,7 +255,7 @@ selalu lebih cepat 1 menit.
 
 | Kunci | Arti | Bawaan |
 |---|---|---|
-| `leadMinutes` | menit sebelum sholat untuk memicu. `15` = info, `5` = serius, `0` = sekarang | `[15, 5, 0]` |
+| `leadMinutes` | menit relatif ke sholat. Positif = sebelum (`15` info, `5` serius), `0` = tepat waktu, **negatif = pengingat sesudah** (`-5` = "sudah lewat 5 menit") | `[15, 5, 0, -5, -10]` |
 | `prayers` | sholat mana yang diawasi | `["fajr","dhuhr","asr","maghrib","isha"]` |
 | `lateToleranceMinutes` | alert yang telat lebih dari ini dianggap terlewat | `20` |
 | `perPrayer` | override per sholat | `{}` |
@@ -282,7 +284,7 @@ Contoh `perPrayer` — Isya hanya info, tanpa notifikasi desktop:
 | Kunci | Arti | Bawaan |
 |---|---|---|
 | `enabled` | nyala/mati | `true` |
-| `atLeadMinutes` | hanya lead ini yang dikirim ke TUI | `[5, 0]` |
+| `atLeadMinutes` | hanya lead ini yang dikirim ke TUI | `[5, 0, -5, -10]` |
 | `targetFocusedPane` | tulis pane fokus, jadi hanya TUI yang dilihat yang toast | `true` |
 
 **`luvusBar`** — `{ "enabled": true }`.

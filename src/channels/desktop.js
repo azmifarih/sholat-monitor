@@ -19,6 +19,9 @@ export function desktop(cfg, alert) {
   if (!cfg.enabled || !available()) return { ok: false, reason: "notify-send tidak ada" }
 
   const minutesLeft = alert.minutesLeft
+  // Lead negatif (pengingat "sudah lewat") juga jatuh di sini: -5 dan -10
+  // sama-sama <= criticalAtMinutes, jadi notifikasi telat menempel sampai
+  // dilihat - memang tugasnya, bukan notifikasi yang boleh lewat begitu saja.
   const critical = minutesLeft <= cfg.criticalAtMinutes
   // 0 berarti "jangan ilang sendiri"; hanya bermakna bersama critical.
   const timeout = critical ? 0 : cfg.timeoutMs > 0 ? cfg.timeoutMs : 15_000

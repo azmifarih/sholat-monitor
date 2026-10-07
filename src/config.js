@@ -77,8 +77,9 @@ export const DEFAULTS = {
 
   alerts: {
     // Menit sebelum waktu sholat untuk memicu alert. 15 = info, 5 = serius,
-    // 0 = sekarang waktunya.
-    leadMinutes: [15, 5, 0],
+    // 0 = sekarang waktunya. Negatif = pengingat sesudah waktunya
+    // (-5 = "sudah lewat 5 menit"), dipakai untuk mengejar yang terlewat.
+    leadMinutes: [15, 5, 0, -5, -10],
     // Sholat mana yang diawasi.
     prayers: ["fajr", "dhuhr", "asr", "maghrib", "isha"],
     // Kalau daemon mati dan menyala lagi, alert yang telat lebih dari ini
@@ -102,7 +103,9 @@ export const DEFAULTS = {
     opencode: {
       enabled: true,
       // Tulis alert.json hanya untuk lead ini saja, biar tidak spam.
-      atLeadMinutes: [5, 0],
+      // -5/-10 = pengingat sesudah waktunya, ikut dikirim supaya toast di TUI
+      // juga mengejar yang terlewat, bukan hanya notifikasi desktop.
+      atLeadMinutes: [5, 0, -5, -10],
       // Tulis LUVUS_PANE_ID pane yang sedang fokus, supaya hanya TUI yang
       // sedang dilihat yang berteriak.
       targetFocusedPane: true,

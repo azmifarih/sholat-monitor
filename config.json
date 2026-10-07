@@ -52,8 +52,12 @@
   // ---------------------------------------------------------------- alert
 
   "alerts": {
-    // Menit sebelum waktu sholat. 15 = info, 5 = serius, 0 = sekarang waktunya.
-    "leadMinutes": [15, 5, 0],
+    // Menit relatif terhadap waktu sholat. 15 = info, 5 = serius,
+    // 0 = sekarang waktunya. NEGATIF = pengingat SESUDAH waktunya:
+    // -5 = "sudah lewat 5 menit", -10 = "sudah lewat 10 menit".
+    // Pengingat telat dikirim sebagai warning yang menempel (tidak hilang
+    // sendiri), karena tugasnya justru mengejar yang terlewat.
+    "leadMinutes": [15, 5, 0, -5, -10],
 
     // Sholat mana yang diawasi.
     "prayers": ["fajr", "dhuhr", "asr", "maghrib", "isha"],
@@ -85,7 +89,7 @@
     // Tulis alert.json untuk plugin TUI OpenCode.
     "opencode": {
       "enabled": true,
-      "atLeadMinutes": [5, 0],  // hanya lead ini yang kirim ke TUI
+      "atLeadMinutes": [5, 0, -5, -10],  // hanya lead ini yang kirim ke TUI
       // Tulis LUVUS_PANE_ID pane yang sedang fokus, jadi hanya TUI yang
       // sedang kamu lihat yang menampilkan toast.
       "targetFocusedPane": true
